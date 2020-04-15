@@ -5,6 +5,20 @@
  */
 
 #include "rpc_proxy.h"
+#include <sys/socket.h> // socket lib
+#include <stdio.h> // io lib
+#include <string.h> // string lib
+#include <netdb.h> 
+#include <stdlib.h>
+#include <sys/types.h>
+#include <arpa/inet.h>
+#include <unistd.h> // read/write fd
+
+#define SA struct sockaddr
+
+struct sockaddr_in p_addr; // address holder
+
+int lookup_host (char *host, char* addr_string, int addr_string_len); // DNS resolve
 
 int *
 connect_proxy_1_svc(dest_host *argp, struct svc_req *rqstp)
@@ -14,6 +28,37 @@ connect_proxy_1_svc(dest_host *argp, struct svc_req *rqstp)
 	/*
 	 * insert server code here
 	 */
+	result = socket(AF_INET, SOCK_STREAM, 0); // open socket fd
+	if(result == -1){
+		printf("socket creation failed...\n");
+		return &result;
+	}
+	printf("Socket created...\n");
+
+	bzero(&p_addr, sizeof(p_addr)); // clean address holder
+
+	// catch Ip from DNS
+	char host_ip[100];
+	lookup_host(argp->host, host_ip, 100);
+	if(strlen(host_ip) == 0){
+		printf("Resolve DNS fail...\n");
+		result = -1;
+		return &result;
+	}
+	printf("IP of DNS %s: %s\n", argp->host, host_ip);
+
+	// assign IP, PORT
+	p_addr.sin_family = AF_INET;
+	p_addr.sin_addr.s_addr = inet_addr(host_ip);
+	p_addr.sin_port = htonl(argp->port);
+
+	// connect the client socket to server socket
+	if(connect(result, (SA*)&p_addr, sizeof(p_addr)) != 0){
+		result = -1;
+		printf("Server connection fail...\n");
+		return &result;
+	}
+	printf("Connecting to server...\n");
 
 	return &result;
 }
@@ -26,6 +71,7 @@ send_proxy_1_svc(p_message *argp, struct svc_req *rqstp)
 	/*
 	 * insert server code here
 	 */
+	result = write(argp->fd, argp->ct, argp->length); // write content to socket
 
 	return &result;
 }
@@ -38,6 +84,7 @@ recv_proxy_1_svc(p_message *argp, struct svc_req *rqstp)
 	/*
 	 * insert server code here
 	 */
+	result = read(argp->fd, argp->ct, argp->length); // read from socket
 
 	return &result;
 }
@@ -50,6 +97,51 @@ close_proxy_1_svc(int *argp, struct svc_req *rqstp)
 	/*
 	 * insert server code here
 	 */
+	result = close(*argp); // close fd
 
 	return &result;
+}
+
+// Resolve DNS request
+int
+lookup_host (char *host, char* addr_string, int addr_string_len)
+{
+	// clean holder of DNS resolved addr
+	bzero(addr_string, addr_string_len);
+	addr_string_len[0] = '\0';
+
+	// DNS resolve code
+  struct addrinfo hints, *res;
+  int errcode;
+  char addrstr[100];
+  void *ptr;
+
+  memset (&hints, 0, sizeof (hints));
+  hints.ai_family = PF_UNSPEC;
+  hints.ai_socktype = SOCK_STREAM;
+  hints.ai_flags |= AI_CANONNAME;
+
+  errcode = getaddrinfo (host, NULL, &hints, &res);
+  if (errcode != 0)
+    {
+      perror ("getaddrinfo");
+      return -1;
+    }
+
+  printf ("Host: %s\n", host);
+  while (res)
+	{
+		inet_ntop (res->ai_family, res->ai_addr->sa_data, addrstr, 100);
+
+		if(res->ai_family == AF_INET)
+		{
+			ptr = &((struct sockaddr_in *) res->ai_addr)->sin_addr;
+			inet_ntop (res->ai_family, ptr, addrstr, 100);
+			memset(addr_string, addrstr, strlen(addrstr));
+			break;
+		}
+		res = res->ai_next;
+	}
+
+	return 0;
 }
