@@ -76,15 +76,19 @@ send_proxy_1_svc(p_message *argp, struct svc_req *rqstp)
 	return &result;
 }
 
-int *
-recv_proxy_1_svc(p_message *argp, struct svc_req *rqstp)
+p_message *
+recv_proxy_1_svc(int *argp, struct svc_req *rqstp)
 {
-	static int  result;
+	static p_message result;
 
 	/*
 	 * insert server code here
 	 */
-	result = read(argp->fd, argp->ct, argp->length); // read from socket
+	char ct[100];
+	result.ct = ct;
+	result.fd = *argp;
+
+	result.length = read(result.fd, result.ct, sizeof(ct)); // read from socket
 
 	return &result;
 }
@@ -104,11 +108,11 @@ close_proxy_1_svc(int *argp, struct svc_req *rqstp)
 
 // Resolve DNS request
 int
-lookup_host (char *host, char* addr_string, int addr_string_len)
+lookup_host (char *host, char *addr_string, int addr_string_len)
 {
 	// clean holder of DNS resolved addr
 	bzero(addr_string, addr_string_len);
-	addr_string_len[0] = '\0';
+	addr_string[0] = '\0';
 
 	// DNS resolve code
   struct addrinfo hints, *res;
@@ -137,7 +141,7 @@ lookup_host (char *host, char* addr_string, int addr_string_len)
 		{
 			ptr = &((struct sockaddr_in *) res->ai_addr)->sin_addr;
 			inet_ntop (res->ai_family, ptr, addrstr, 100);
-			memset(addr_string, addrstr, strlen(addrstr));
+			memcpy(addr_string, addrstr, strlen(addrstr));
 			break;
 		}
 		res = res->ai_next;

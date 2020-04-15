@@ -39,15 +39,15 @@ send_proxy_1(p_message *argp, CLIENT *clnt)
 	return (&clnt_res);
 }
 
-int *
-recv_proxy_1(p_message *argp, CLIENT *clnt)
+p_message *
+recv_proxy_1(int *argp, CLIENT *clnt)
 {
-	static int clnt_res;
+	static p_message clnt_res;
 
 	memset((char *)&clnt_res, 0, sizeof(clnt_res));
 	if (clnt_call (clnt, recv_proxy,
-		(xdrproc_t) xdr_p_message, (caddr_t) argp,
-		(xdrproc_t) xdr_int, (caddr_t) &clnt_res,
+		(xdrproc_t) xdr_int, (caddr_t) argp,
+		(xdrproc_t) xdr_p_message, (caddr_t) &clnt_res,
 		TIMEOUT) != RPC_SUCCESS) {
 		return (NULL);
 	}

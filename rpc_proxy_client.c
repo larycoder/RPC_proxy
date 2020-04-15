@@ -28,22 +28,20 @@ rpc_proxy_program_1(char *host)
 	}
 #endif	/* DEBUG */
 
-	result_1 = connect_proxy_1(&connect_proxy_1_arg, clnt);
-	if (result_1 == (int *) NULL) {
-		clnt_perror (clnt, "call failed");
+	// read data from stdin
+	char data[500];
+	int content_length = 0; // length of http data
+	while(fgets(data, sizeof(data), stdin)){
+		if(data[0] == '\n'){
+			if(content_length == 0){
+				break;
+			}
+			else{
+				// read http data
+			}
+		}
 	}
-	result_2 = send_proxy_1(&send_proxy_1_arg, clnt);
-	if (result_2 == (int *) NULL) {
-		clnt_perror (clnt, "call failed");
-	}
-	result_3 = recv_proxy_1(&recv_proxy_1_arg, clnt);
-	if (result_3 == (int *) NULL) {
-		clnt_perror (clnt, "call failed");
-	}
-	result_4 = close_proxy_1(&close_proxy_1_arg, clnt);
-	if (result_4 == (int *) NULL) {
-		clnt_perror (clnt, "call failed");
-	}
+
 #ifndef	DEBUG
 	clnt_destroy (clnt);
 #endif	 /* DEBUG */

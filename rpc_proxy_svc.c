@@ -22,7 +22,7 @@ rpc_proxy_program_1(struct svc_req *rqstp, register SVCXPRT *transp)
 	union {
 		dest_host connect_proxy_1_arg;
 		p_message send_proxy_1_arg;
-		p_message recv_proxy_1_arg;
+		int recv_proxy_1_arg;
 		int close_proxy_1_arg;
 	} argument;
 	char *result;
@@ -47,8 +47,8 @@ rpc_proxy_program_1(struct svc_req *rqstp, register SVCXPRT *transp)
 		break;
 
 	case recv_proxy:
-		_xdr_argument = (xdrproc_t) xdr_p_message;
-		_xdr_result = (xdrproc_t) xdr_int;
+		_xdr_argument = (xdrproc_t) xdr_int;
+		_xdr_result = (xdrproc_t) xdr_p_message;
 		local = (char *(*)(char *, struct svc_req *)) recv_proxy_1_svc;
 		break;
 

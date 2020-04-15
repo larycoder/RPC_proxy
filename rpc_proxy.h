@@ -38,8 +38,8 @@ extern  int * connect_proxy_1_svc(dest_host *, struct svc_req *);
 extern  int * send_proxy_1(p_message *, CLIENT *);
 extern  int * send_proxy_1_svc(p_message *, struct svc_req *);
 #define recv_proxy 3
-extern  int * recv_proxy_1(p_message *, CLIENT *);
-extern  int * recv_proxy_1_svc(p_message *, struct svc_req *);
+extern  p_message * recv_proxy_1(int *, CLIENT *);
+extern  p_message * recv_proxy_1_svc(int *, struct svc_req *);
 #define close_proxy 4
 extern  int * close_proxy_1(int *, CLIENT *);
 extern  int * close_proxy_1_svc(int *, struct svc_req *);
@@ -53,8 +53,8 @@ extern  int * connect_proxy_1_svc();
 extern  int * send_proxy_1();
 extern  int * send_proxy_1_svc();
 #define recv_proxy 3
-extern  int * recv_proxy_1();
-extern  int * recv_proxy_1_svc();
+extern  p_message * recv_proxy_1();
+extern  p_message * recv_proxy_1_svc();
 #define close_proxy 4
 extern  int * close_proxy_1();
 extern  int * close_proxy_1_svc();
