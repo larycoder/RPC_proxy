@@ -69,8 +69,8 @@ rpc_proxy_program_1(char *host)
 	}
 
 	// setup non-blocking r/w
-	int flags = fcntl(client, F_GETFL, 0);
-	fcntl(client, F_SETFL, flags | O_NONBLOCK);
+	// int flags = fcntl(client, F_GETFL, 0);
+	// fcntl(client, F_SETFL, flags | O_NONBLOCK);
 	// flags = fcntl(1, F_GETFD, 0);
 	// fcntl(1, F_SETFL, flags | O_NONBLOCK);
 

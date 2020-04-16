@@ -88,8 +88,8 @@ connect_proxy_1_svc(dest_host *argp, struct svc_req *rqstp)
 	printf("Connected to server...\n");
 
 	// setup non-blocking r/w
-	int flags = fcntl(result, F_GETFL, 0);
-	fcntl(result, F_SETFL, flags | O_NONBLOCK);
+	// int flags = fcntl(result, F_GETFL, 0);
+	// fcntl(result, F_SETFL, flags | O_NONBLOCK);
 
 	return &result;
 }
