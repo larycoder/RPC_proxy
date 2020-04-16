@@ -13,6 +13,7 @@
 #include <sys/types.h>
 #include <arpa/inet.h>
 #include <unistd.h> // read/write fd
+#include <fcntl.h>
 
 #define SA struct sockaddr
 
@@ -88,6 +89,11 @@ recv_proxy_1_svc(int *argp, struct svc_req *rqstp)
 	result.ct = ct;
 	result.fd = *argp;
 
+	// setup non-blocking r/w
+	int flags = fcntl(result.fd, F_GETFL, 0);
+	fcntl(result.fd, F_SETFL, flags | O_NONBLOCK);
+
+	// read data from server to client
 	result.length = read(result.fd, result.ct, sizeof(ct)); // read from socket
 
 	return &result;

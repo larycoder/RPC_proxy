@@ -5,20 +5,24 @@
  */
 
 #include "rpc_proxy.h"
+#include <fcntl.h>
+#include <unistd.h> // read/write fd
+#include <string.h>
+#include <stdio.h>
+#include <stdlib.h>
 
+// proxy support https only
+#define HTTPS 0
+
+#define STOP_SIG -1
+
+int string_2_num(char *str); // tool func
+int parse_head(dest_host *dh); // DNS and PORT capture
 
 void
 rpc_proxy_program_1(char *host)
 {
 	CLIENT *clnt;
-	int  *result_1;
-	dest_host  connect_proxy_1_arg;
-	int  *result_2;
-	p_message  send_proxy_1_arg;
-	int  *result_3;
-	p_message  recv_proxy_1_arg;
-	int  *result_4;
-	int  close_proxy_1_arg;
 
 #ifndef	DEBUG
 	clnt = clnt_create (host, rpc_proxy_program, rpc_proxy_ver, "udp");
@@ -27,17 +31,64 @@ rpc_proxy_program_1(char *host)
 		exit (1);
 	}
 #endif	/* DEBUG */
+	int connect_fail = 0;
 
-	// read data from stdin
-	char data[500];
-	int content_length = 0; // length of http data
-	while(fgets(data, sizeof(data), stdin)){
-		if(data[0] == '\n'){
-			if(content_length == 0){
+	// connect proxy to destination
+	dest_host dh;
+	if(parse_head(&dh) != HTTPS){
+		printf("Support HTTPS Proxy mozilla protocol only\n");
+		clnt_destroy (clnt);
+		return;
+	}
+	int *fd = connect_proxy_1(&dh, clnt);
+	if (fd == (int *) NULL) {
+		clnt_perror (clnt, "call failed");
+	}
+
+	printf("\n"); // response to client
+
+	// setup non-blocking r/w
+	int flags = fcntl(0, F_GETFL, 0);
+	fcntl(0, F_SETFL, flags | O_NONBLOCK);
+	// flags = fcntl(1, F_GETFD, 0);
+	// fcntl(1, F_SETFL, flags | O_NONBLOCK);
+
+	char data[100]; // data transfer of proxy
+
+	// transfer data
+	p_message message;
+	message.ct = data;
+	message.fd = *fd;
+	while(fd){
+		// send message from src to dest
+		message.length = read(0, message.ct, sizeof(data));
+		if(message.length > 0){
+			int *result_send = send_proxy_1(&message, clnt);
+			
+			if (result_send == (int *) NULL) {
+				clnt_perror (clnt, "call failed");
 				break;
 			}
-			else{
-				// read http data
+
+			if(*result_send == STOP_SIG){
+				printf("Stop signal from dest\n");
+				break;
+			}
+		}
+
+		// recv message from dest to src
+		p_message *result_recv = recv_proxy_1(fd, clnt);
+		
+		if (result_recv == (p_message *) NULL) {
+			clnt_perror (clnt, "call failed");
+			break;
+		}
+		
+		if(result_recv->length > 0){
+			int value = write(1, result_recv->ct, result_recv->length);
+			if(value == STOP_SIG){
+				close_proxy_1(fd, clnt);
+				break;
 			}
 		}
 	}
@@ -60,4 +111,51 @@ main (int argc, char *argv[])
 	host = argv[1];
 	rpc_proxy_program_1 (host);
 exit (0);
+}
+
+int parse_head(dest_host *dh){
+	char line[100];
+	int mode = -1;
+	fgets(line, sizeof(line), stdin);
+	if(strncmp(line, "CONNECT", 7) == 0){
+		// https ver
+		for(int i = 0; i < strlen(line); i++){
+			if(line[i] == ' '){
+				int index = 0;
+				char ip_addr[100];
+				
+				// get DNS name
+				while(line[++i] != ':'){
+					ip_addr[index++] = line[i];
+				}
+				ip_addr[index] = '\0';
+				dh->host = (char*) malloc (strlen(ip_addr) + 1);
+				memcpy(dh->host, ip_addr, strlen(ip_addr) + 1);
+
+				// get port
+				index = 0;
+				while(line[++i] != ' '){
+					ip_addr[index++] = line[i];
+				}
+				ip_addr[index] = '\0';
+				dh->port = string_2_num(ip_addr);
+				mode = HTTPS;
+				break;
+			}
+		}
+	}
+
+	// flush another header
+	while(line[0] != '\n'){
+		fgets(line, sizeof(line), stdin);
+	}
+	return mode;
+}
+
+int string_2_num(char *str){
+	int num = 0;
+	for(int i = 0; i < strlen(str); i++){
+		num = num * 10 + (str[i] - '0');
+	}
+	return num;
 }
