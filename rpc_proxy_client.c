@@ -10,19 +10,30 @@
 #include <string.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <signal.h>
 
 // proxy support https only
 #define HTTPS 0
 
 #define STOP_SIG -1
+#define PORT 5000
+
+#define SA struct sockaddr
+
+int sockfd;
 
 int string_2_num(char *str); // tool func
-int parse_head(dest_host *dh); // DNS and PORT capture
+int parse_head(dest_host *dh, int fd); // DNS and PORT capture
+int open_server(struct sockaddr_in *servaddr, int saddr_s, struct sockaddr_in* cli, int caddr_s, int *sockfd);
+void close_socket(){
+	close(sockfd);
+}
 
 void
 rpc_proxy_program_1(char *host)
 {
 	CLIENT *clnt;
+	struct sockaddr_in seraddr, cli;
 
 #ifndef	DEBUG
 	clnt = clnt_create (host, rpc_proxy_program, rpc_proxy_ver, "udp");
@@ -31,11 +42,13 @@ rpc_proxy_program_1(char *host)
 		exit (1);
 	}
 #endif	/* DEBUG */
-	int connect_fail = 0;
+
+	// open server for incoming client
+	int client = open_server(&seraddr, sizeof(seraddr), &cli, sizeof(cli), &sockfd);
 
 	// connect proxy to destination
 	dest_host dh;
-	if(parse_head(&dh) != HTTPS){
+	if(parse_head(&dh, client) != HTTPS){
 		printf("Support HTTPS Proxy mozilla protocol only\n");
 		clnt_destroy (clnt);
 		return;
@@ -43,15 +56,27 @@ rpc_proxy_program_1(char *host)
 	int *fd = connect_proxy_1(&dh, clnt);
 	if (fd == (int *) NULL) {
 		clnt_perror (clnt, "call failed");
+		clnt_destroy (clnt);
+		return;
 	}
 
-	printf("\n"); // response to client
+	if (*fd == -1){
+		printf("connection fail\n");
+		clnt_destroy (clnt);
+		return;
+	}
 
 	// setup non-blocking r/w
-	int flags = fcntl(0, F_GETFL, 0);
-	fcntl(0, F_SETFL, flags | O_NONBLOCK);
+	int flags = fcntl(client, F_GETFL, 0);
+	fcntl(client, F_SETFL, flags | O_NONBLOCK);
 	// flags = fcntl(1, F_GETFD, 0);
 	// fcntl(1, F_SETFL, flags | O_NONBLOCK);
+
+	// flush another header
+	// char c;
+	// while(read(client, &c, 1) > 0){;}
+  
+	write(client, "HTTP/1.1 200 OK\r\n\r\n", 23); // response to client
 
 	char data[100]; // data transfer of proxy
 
@@ -61,8 +86,9 @@ rpc_proxy_program_1(char *host)
 	message.fd = *fd;
 	while(fd){
 		// send message from src to dest
-		message.length = read(0, message.ct, sizeof(data));
+		message.length = read(client, message.ct, sizeof(data));
 		if(message.length > 0){
+			printf("%d ", message.length); // test
 			int *result_send = send_proxy_1(&message, clnt);
 			
 			if (result_send == (int *) NULL) {
@@ -85,13 +111,16 @@ rpc_proxy_program_1(char *host)
 		}
 		
 		if(result_recv->length > 0){
-			int value = write(1, result_recv->ct, result_recv->length);
+			int value = write(client, result_recv->ct, result_recv->length);
 			if(value == STOP_SIG){
-				close_proxy_1(fd, clnt);
 				break;
 			}
 		}
 	}
+
+	close_proxy_1(fd, clnt); // stop connection
+	close(sockfd);
+	close(client);
 
 #ifndef	DEBUG
 	clnt_destroy (clnt);
@@ -109,14 +138,17 @@ main (int argc, char *argv[])
 		exit (1);
 	}
 	host = argv[1];
+
+	// called when terminate
+	signal(SIGINT, close_socket);
+
 	rpc_proxy_program_1 (host);
-exit (0);
 }
 
-int parse_head(dest_host *dh){
+int parse_head(dest_host *dh, int fd){
 	char line[100];
 	int mode = -1;
-	fgets(line, sizeof(line), stdin);
+	read(fd, line, sizeof(line));
 	if(strncmp(line, "CONNECT", 7) == 0){
 		// https ver
 		for(int i = 0; i < strlen(line); i++){
@@ -144,11 +176,6 @@ int parse_head(dest_host *dh){
 			}
 		}
 	}
-
-	// flush another header
-	while(line[0] != '\n'){
-		fgets(line, sizeof(line), stdin);
-	}
 	return mode;
 }
 
@@ -159,3 +186,49 @@ int string_2_num(char *str){
 	}
 	return num;
 }
+
+int open_server(struct sockaddr_in *servaddr, int saddr_s, struct sockaddr_in* cli, int caddr_s, int *sockfd){
+	*sockfd = socket(AF_INET, SOCK_STREAM, 0);
+	if (*sockfd == -1) { 
+        printf("socket creation failed...\n"); 
+        exit(0); 
+    } 
+    else
+        printf("Socket successfully created..\n"); 
+    bzero(servaddr, saddr_s);
+  
+    // assign IP, PORT 
+    servaddr->sin_family = AF_INET; 
+    servaddr->sin_addr.s_addr = htonl(INADDR_ANY); 
+    servaddr->sin_port = htons(PORT); 
+  
+    // Binding newly created socket to given IP and verification 
+    if ((bind(*sockfd, (SA*)servaddr, saddr_s)) != 0) { 
+        printf("socket bind failed...\n"); 
+        exit(0); 
+    } 
+    else
+        printf("Socket successfully binded..\n"); 
+  
+    // Now server is ready to listen and verification 
+    if ((listen(*sockfd, 1)) != 0) { 
+        printf("Listen failed...\n"); 
+        exit(0); 
+    } 
+    else
+        printf("Server listening..\n");
+
+		int len = caddr_s;
+  
+    // Accept the data packet from client and verification 
+    int connfd = accept(*sockfd, (SA*)cli, &len); 
+    if (connfd < 0) { 
+        printf("server acccept failed...\n"); 
+        exit(0); 
+    } 
+    else
+        printf("server acccept the client...\n");
+		
+		return connfd;
+}
+

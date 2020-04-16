@@ -15,9 +15,11 @@
 #include <unistd.h> // read/write fd
 #include <fcntl.h>
 
+#define P_DEBUG 1
+
 #define SA struct sockaddr
 
-struct sockaddr_in p_addr; // address holder
+static struct sockaddr_in p_addr; // address holder
 
 int lookup_host (char *host, char* addr_string, int addr_string_len); // DNS resolve
 
@@ -47,11 +49,12 @@ connect_proxy_1_svc(dest_host *argp, struct svc_req *rqstp)
 		return &result;
 	}
 	printf("IP of DNS %s: %s\n", argp->host, host_ip);
+	printf("Port %d\n", argp->port); // test
 
 	// assign IP, PORT
 	p_addr.sin_family = AF_INET;
 	p_addr.sin_addr.s_addr = inet_addr(host_ip);
-	p_addr.sin_port = htonl(argp->port);
+	p_addr.sin_port = htons(argp->port);
 
 	// connect the client socket to server socket
 	if(connect(result, (SA*)&p_addr, sizeof(p_addr)) != 0){
@@ -59,7 +62,11 @@ connect_proxy_1_svc(dest_host *argp, struct svc_req *rqstp)
 		printf("Server connection fail...\n");
 		return &result;
 	}
-	printf("Connecting to server...\n");
+	printf("Connected to server...\n");
+
+	// setup non-blocking r/w
+	int flags = fcntl(result, F_GETFL, 0);
+	fcntl(result, F_SETFL, flags | O_NONBLOCK);
 
 	return &result;
 }
@@ -72,6 +79,12 @@ send_proxy_1_svc(p_message *argp, struct svc_req *rqstp)
 	/*
 	 * insert server code here
 	 */
+	if(P_DEBUG){
+		printf("\nsend value:\n");
+		for(int i = 0; i < argp->length; i++){
+			printf("%c", argp->ct[i]);
+		}
+	}
 	result = write(argp->fd, argp->ct, argp->length); // write content to socket
 
 	return &result;
@@ -88,10 +101,6 @@ recv_proxy_1_svc(int *argp, struct svc_req *rqstp)
 	char ct[100];
 	result.ct = ct;
 	result.fd = *argp;
-
-	// setup non-blocking r/w
-	int flags = fcntl(result.fd, F_GETFL, 0);
-	fcntl(result.fd, F_SETFL, flags | O_NONBLOCK);
 
 	// read data from server to client
 	result.length = read(result.fd, result.ct, sizeof(ct)); // read from socket
@@ -148,7 +157,7 @@ lookup_host (char *host, char *addr_string, int addr_string_len)
 			ptr = &((struct sockaddr_in *) res->ai_addr)->sin_addr;
 			inet_ntop (res->ai_family, ptr, addrstr, 100);
 			memcpy(addr_string, addrstr, strlen(addrstr));
-			break;
+			return 0;
 		}
 		res = res->ai_next;
 	}
