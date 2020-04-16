@@ -18,6 +18,8 @@
 #define STOP_SIG -1
 #define PORT 5000
 
+#define P_DEBUG 1
+
 #define SA struct sockaddr
 
 int sockfd;
@@ -88,7 +90,6 @@ rpc_proxy_program_1(char *host)
 		// send message from src to dest
 		message.length = read(client, message.ct, sizeof(data));
 		if(message.length > 0){
-			printf("%d ", message.length); // test
 			int *result_send = send_proxy_1(&message, clnt);
 			
 			if (result_send == (int *) NULL) {
@@ -146,9 +147,17 @@ main (int argc, char *argv[])
 }
 
 int parse_head(dest_host *dh, int fd){
-	char line[100];
+	char line[500];
 	int mode = -1;
-	read(fd, line, sizeof(line));
+	
+	// debug mode
+	if(P_DEBUG){
+		int value = read(fd, line, sizeof(line));
+		line[value] = '\0';
+		printf("connect method length: %d\n", value);
+		printf("connect data: %s", line);
+	}
+
 	if(strncmp(line, "CONNECT", 7) == 0){
 		// https ver
 		for(int i = 0; i < strlen(line); i++){

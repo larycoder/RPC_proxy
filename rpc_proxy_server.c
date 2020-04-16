@@ -20,6 +20,7 @@
 #define SA struct sockaddr
 
 static struct sockaddr_in p_addr; // address holder
+static struct sockaddr_in6 p_addr6;
 
 int lookup_host (char *host, char* addr_string, int addr_string_len); // DNS resolve
 
@@ -31,18 +32,12 @@ connect_proxy_1_svc(dest_host *argp, struct svc_req *rqstp)
 	/*
 	 * insert server code here
 	 */
-	result = socket(AF_INET, SOCK_STREAM, 0); // open socket fd
-	if(result == -1){
-		printf("socket creation failed...\n");
-		return &result;
-	}
-	printf("Socket created...\n");
-
 	bzero(&p_addr, sizeof(p_addr)); // clean address holder
+	bzero(&p_addr6, sizeof(p_addr6));
 
 	// catch Ip from DNS
 	char host_ip[100];
-	lookup_host(argp->host, host_ip, 100);
+	int mode = lookup_host(argp->host, host_ip, 100);
 	if(strlen(host_ip) == 0){
 		printf("Resolve DNS fail...\n");
 		result = -1;
@@ -52,16 +47,44 @@ connect_proxy_1_svc(dest_host *argp, struct svc_req *rqstp)
 	printf("Port %d\n", argp->port); // test
 
 	// assign IP, PORT
-	p_addr.sin_family = AF_INET;
-	p_addr.sin_addr.s_addr = inet_addr(host_ip);
-	p_addr.sin_port = htons(argp->port);
+	if(mode == 0){
+		result = socket(AF_INET, SOCK_STREAM, 0); // open socket fd
+		if(result == -1){
+			printf("socket creation failed...\n");
+			return &result;
+		}
+		printf("Socket created...\n");
 
-	// connect the client socket to server socket
-	if(connect(result, (SA*)&p_addr, sizeof(p_addr)) != 0){
-		result = -1;
-		printf("Server connection fail...\n");
-		return &result;
+		p_addr.sin_family = AF_INET;
+		p_addr.sin_addr.s_addr = inet_addr(host_ip);
+		p_addr.sin_port = htons(argp->port);
+
+		// connect the client socket to server socket
+		if(connect(result, (SA*)&p_addr, sizeof(p_addr)) != 0){
+			result = -1;
+			printf("Server connection fail...\n");
+			return &result;
+		}
 	}
+	else{
+		result = socket(AF_INET6, SOCK_STREAM, 0);
+		if(result == -1){
+			printf("socket creation failed...\n");
+			return &result;
+		}
+		printf("Socket created...\n");
+
+		p_addr6.sin6_family = AF_INET6;
+		p_addr6.sin6_port = htons(argp->port);
+		inet_pton(AF_INET6, host_ip, &p_addr6.sin6_addr);
+
+		if(connect(result, (SA *)&p_addr6, sizeof(p_addr6)) != 0){
+			result = -1;
+			printf("Server connection fail...\n");
+			return &result;
+		}
+	}
+
 	printf("Connected to server...\n");
 
 	// setup non-blocking r/w
@@ -80,10 +103,10 @@ send_proxy_1_svc(p_message *argp, struct svc_req *rqstp)
 	 * insert server code here
 	 */
 	if(P_DEBUG){
-		printf("\nsend value:\n");
-		for(int i = 0; i < argp->length; i++){
-			printf("%c", argp->ct[i]);
-		}
+		// printf("\nsend value:\n");
+		//for(int i = 0; i < argp->length; i++){
+			printf("send length: %d\n", argp->length);
+		//}
 	}
 	result = write(argp->fd, argp->ct, argp->length); // write content to socket
 
@@ -104,6 +127,13 @@ recv_proxy_1_svc(int *argp, struct svc_req *rqstp)
 
 	// read data from server to client
 	result.length = read(result.fd, result.ct, sizeof(ct)); // read from socket
+
+	if(P_DEBUG && result.length > 0){
+		//printf("\nrecv value:\n");
+		//for(int i = 0; i < result.length; i++){
+			printf("recv length: %d\n", result.length);
+		//}
+	}
 
 	return &result;
 }
@@ -134,6 +164,7 @@ lookup_host (char *host, char *addr_string, int addr_string_len)
   int errcode;
   char addrstr[100];
   void *ptr;
+	int mode;
 
   memset (&hints, 0, sizeof (hints));
   hints.ai_family = PF_UNSPEC;
@@ -152,12 +183,23 @@ lookup_host (char *host, char *addr_string, int addr_string_len)
 	{
 		inet_ntop (res->ai_family, res->ai_addr->sa_data, addrstr, 100);
 
-		if(res->ai_family == AF_INET)
+		switch(res->ai_family)
 		{
-			ptr = &((struct sockaddr_in *) res->ai_addr)->sin_addr;
+			case AF_INET:
+				ptr = &((struct sockaddr_in *) res->ai_addr)->sin_addr;
+				mode = 0;
+				break;
+			case AF_INET6:
+				ptr = &((struct sockaddr_in6 *) res->ai_addr)->sin6_addr;
+				mode = 1;
+				break;
+		}
+		
+		// test - get Ipv6 only
+		if(mode == 0){
 			inet_ntop (res->ai_family, ptr, addrstr, 100);
 			memcpy(addr_string, addrstr, strlen(addrstr));
-			return 0;
+			return mode;
 		}
 		res = res->ai_next;
 	}
