@@ -103,10 +103,7 @@ send_proxy_1_svc(p_message *argp, struct svc_req *rqstp)
 	 * insert server code here
 	 */
 	if(P_DEBUG){
-		// printf("\nsend value:\n");
-		//for(int i = 0; i < argp->length; i++){
-			printf("send length: %d\n", argp->length);
-		//}
+		printf("send length: %d\n", argp->length);
 	}
 	result = write(argp->fd, argp->ct, argp->length); // write content to socket
 
@@ -129,10 +126,7 @@ recv_proxy_1_svc(int *argp, struct svc_req *rqstp)
 	result.length = read(result.fd, result.ct, sizeof(ct)); // read from socket
 
 	if(P_DEBUG && result.length > 0){
-		//printf("\nrecv value:\n");
-		//for(int i = 0; i < result.length; i++){
-			printf("recv length: %d\n", result.length);
-		//}
+		printf("recv length: %d\n", result.length);
 	}
 
 	return &result;
@@ -146,8 +140,8 @@ close_proxy_1_svc(int *argp, struct svc_req *rqstp)
 	/*
 	 * insert server code here
 	 */
+	printf("CLose socket\n");
 	result = close(*argp); // close fd
-
 	return &result;
 }
 
@@ -195,7 +189,7 @@ lookup_host (char *host, char *addr_string, int addr_string_len)
 				break;
 		}
 		
-		// test - get Ipv6 only
+		// test - get Ipv4 only
 		if(mode == 0){
 			inet_ntop (res->ai_family, ptr, addrstr, 100);
 			memcpy(addr_string, addrstr, strlen(addrstr));

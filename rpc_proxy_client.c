@@ -11,74 +11,144 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <signal.h>
+#include <arpa/inet.h>
+#include <errno.h>
 
 // proxy support https only
 #define HTTPS 0
-
+#define HTTP 1
 #define STOP_SIG -1
 #define PORT 5000
-
-#define P_DEBUG 1
-
+#define P_DEBUG 0
 #define SA struct sockaddr
 
-int sockfd;
+struct sockaddr_in seraddr, cli;
+int sockfd = -1, client = -1, cli_len = sizeof(cli);
+CLIENT *clnt = NULL;
 
+void close_socket();
 int string_2_num(char *str); // tool func
-int parse_head(dest_host *dh, int fd); // DNS and PORT capture
-int open_server(struct sockaddr_in *servaddr, int saddr_s, struct sockaddr_in* cli, int caddr_s, int *sockfd);
-void close_socket(){
-	close(sockfd);
+int parse_head(dest_host *dh, char *line, int sz, int *h_length); // DNS and PORT capture
+int open_server(void);
+void rpc_proxy_program_1(char *host);
+
+int main (int argc, char *argv[]){
+	char *host;
+	if (argc < 2) {
+		printf ("usage: %s server_host\n", argv[0]);
+		return 0;
+	}
+	host = argv[1];
+
+	// called when terminate
+	signal(SIGINT, close_socket);
+	rpc_proxy_program_1 (host);
 }
 
-void
-rpc_proxy_program_1(char *host)
-{
-	CLIENT *clnt;
-	struct sockaddr_in seraddr, cli;
+void close_socket(){
+	if(sockfd > 0) close(sockfd);
+	if(client > 0) close(client);
+	if(clnt != NULL) clnt_destroy (clnt);
+	printf("\nClose signal !\n");
+}
 
-#ifndef	DEBUG
+void rpc_proxy_program_1(char *host){
 	clnt = clnt_create (host, rpc_proxy_program, rpc_proxy_ver, "udp");
-	if (clnt == NULL) {
+	if (clnt == NULL){
 		clnt_pcreateerror (host);
-		exit (1);
+		return;
 	}
-#endif	/* DEBUG */
 
-	// open server for incoming client
-	int client = open_server(&seraddr, sizeof(seraddr), &cli, sizeof(cli), &sockfd);
+	// open server for incoming client and take over connection to chill
+	while(1){
+		client = open_server();
+		if(client < 0) return;
+		if(fork() == 0){
+			close(sockfd);
+			sockfd = -1;
+			break;
+		}
+		close(client);
+		client = -1;
+	}
 
 	// connect proxy to destination
 	dest_host dh;
-	if(parse_head(&dh, client) != HTTPS){
-		printf("Support HTTPS Proxy mozilla protocol only\n");
-		clnt_destroy (clnt);
-		return;
-	}
-	int *fd = connect_proxy_1(&dh, clnt);
-	if (fd == (int *) NULL) {
-		clnt_perror (clnt, "call failed");
-		clnt_destroy (clnt);
-		return;
+	char line[500];
+	int h_length;
+
+	int mode = parse_head(&dh, line, sizeof(line), &h_length);
+
+	if(P_DEBUG){
+		printf("HEAD DNS: %s port: %d\n", dh.host, dh.port);
 	}
 
-	if (*fd == -1){
+	int *fd = connect_proxy_1(&dh, clnt);
+	if (fd == (int *) NULL) {
+		clnt_perror (clnt, "connect call failed");
+		return;
+	}
+	else if (*fd == -1){
 		printf("connection fail\n");
-		clnt_destroy (clnt);
 		return;
 	}
 
 	// setup non-blocking r/w
 	int flags = fcntl(client, F_GETFL, 0);
 	fcntl(client, F_SETFL, flags | O_NONBLOCK);
-	// flags = fcntl(1, F_GETFD, 0);
-	// fcntl(1, F_SETFL, flags | O_NONBLOCK);
 
-	// flush another header
-	// char c;
-	// while(read(client, &c, 1) > 0){;}
-  
-	write(client, "HTTP/1.1 200 OK\r\n\r\n", 23); // response to client
+	if(mode == HTTP){ // HTTP mode
+		// send header to proxy
+		p_message head;
+		head.fd = *fd;
+		printf("fd of dest: %d\n", *fd);
+		
+		// cut off head to send
+		for(int i = 0; i < (h_length / 50); i++){
+			head.ct = &line[i * 50];
+			head.length = 50;
+			int *result_send = send_proxy_1(&head, clnt);
+			if (result_send == (int *) NULL) {
+				clnt_perror (clnt, "send main head call failed");
+				close_proxy_1(fd, clnt); // stop connection
+				return;
+			}
+			else if(*result_send == STOP_SIG){
+				printf("Stop signal from dest\n");
+				close_proxy_1(fd, clnt); // stop connection
+				return;
+			}
+		}
+
+		// send remained part of head
+		head.length = h_length % 100;
+		int *result_send = send_proxy_1(&head, clnt);
+		if (result_send == (int *) NULL) {
+			clnt_perror (clnt, "send remain head call failed");
+			close_proxy_1(fd, clnt); // stop connection
+			return;
+		}
+		else if(*result_send == STOP_SIG){
+			printf("Stop signal from dest\n");
+			close_proxy_1(fd, clnt); // stop connection
+			return;
+		}
+	}
+	else if(mode == HTTPS){ // HTTPS mode
+		if(P_DEBUG){
+			printf("flush value: \n");
+		}
+		char c;
+		while(read(client, &c, 1) > 0){
+			if(P_DEBUG) printf("%c", c);
+			;
+		} // flush noise data
+
+		// response to client
+		if(P_DEBUG) printf("Send response to HTTPS client\n");
+		char response[] = "HTTP/1.1 200 OK\r\n\r\n";
+		write(client, response, strlen(response));
+	}
 
 	char data[100]; // data transfer of proxy
 
@@ -93,74 +163,51 @@ rpc_proxy_program_1(char *host)
 			int *result_send = send_proxy_1(&message, clnt);
 			
 			if (result_send == (int *) NULL) {
-				clnt_perror (clnt, "call failed");
-				break;
+				clnt_perror (clnt, "send call failed");
+				close_proxy_1(fd, clnt); // stop connection
+				return;
 			}
-
-			if(*result_send == STOP_SIG){
+			else if(*result_send == STOP_SIG){
 				printf("Stop signal from dest\n");
-				break;
+				close_proxy_1(fd, clnt); // stop connection
+				return;
 			}
 		}
 
 		// recv message from dest to src
 		p_message *result_recv = recv_proxy_1(fd, clnt);
-		
 		if (result_recv == (p_message *) NULL) {
-			clnt_perror (clnt, "call failed");
-			break;
+			clnt_perror (clnt, "Recv call failed");
+			close_proxy_1(fd, clnt); // stop connection
+			return;
 		}
-		
-		if(result_recv->length > 0){
+		else if(result_recv->length > 0){
 			int value = write(client, result_recv->ct, result_recv->length);
 			if(value == STOP_SIG){
-				break;
+				close_proxy_1(fd, clnt); // stop connection
+				return;
 			}
 		}
 	}
-
-	close_proxy_1(fd, clnt); // stop connection
-	close(sockfd);
-	close(client);
-
-#ifndef	DEBUG
-	clnt_destroy (clnt);
-#endif	 /* DEBUG */
 }
 
-
-int
-main (int argc, char *argv[])
-{
-	char *host;
-
-	if (argc < 2) {
-		printf ("usage: %s server_host\n", argv[0]);
-		exit (1);
+int parse_head(dest_host *dh, char *line, int sz, int *h_length){
+	if((*h_length = read(client, line, sz)) < 1){
+		printf("Error of parse head: %s\n", strerror(errno));
+		return -1;
 	}
-	host = argv[1];
 
-	// called when terminate
-	signal(SIGINT, close_socket);
-
-	rpc_proxy_program_1 (host);
-}
-
-int parse_head(dest_host *dh, int fd){
-	char line[500];
 	int mode = -1;
 	
 	// debug mode
 	if(P_DEBUG){
-		int value = read(fd, line, sizeof(line));
-		line[value] = '\0';
-		printf("connect method length: %d\n", value);
-		printf("connect data: %s", line);
+		printf("connect method length: %d\n", *h_length);
+		printf("connect data: %s\n", line);
 	}
 
 	if(strncmp(line, "CONNECT", 7) == 0){
 		// https ver
-		for(int i = 0; i < strlen(line); i++){
+		for(int i = 0; i < *h_length; i++){
 			if(line[i] == ' '){
 				int index = 0;
 				char ip_addr[100];
@@ -185,6 +232,28 @@ int parse_head(dest_host *dh, int fd){
 			}
 		}
 	}
+	else{
+		for(int i = 0; i < *h_length; i++){
+			if(line[i] == '\n' && strncmp(&line[i + 1], "Host", 4) == 0){
+				int index = 0;
+				char ip_addr[100];
+				i = i + 6;
+				
+				// get DNS name
+				while(line[++i] != '\r'){
+					ip_addr[index++] = line[i];
+				}
+				ip_addr[index] = '\0';
+				dh->host = (char*) malloc (strlen(ip_addr) + 1);
+				memcpy(dh->host, ip_addr, strlen(ip_addr) + 1);
+
+				// get port
+				dh->port = 80;
+				mode = HTTP;
+				break;
+			}
+		}
+	}
 	return mode;
 }
 
@@ -196,48 +265,49 @@ int string_2_num(char *str){
 	return num;
 }
 
-int open_server(struct sockaddr_in *servaddr, int saddr_s, struct sockaddr_in* cli, int caddr_s, int *sockfd){
-	*sockfd = socket(AF_INET, SOCK_STREAM, 0);
-	if (*sockfd == -1) { 
-        printf("socket creation failed...\n"); 
-        exit(0); 
-    } 
-    else
-        printf("Socket successfully created..\n"); 
-    bzero(servaddr, saddr_s);
-  
-    // assign IP, PORT 
-    servaddr->sin_family = AF_INET; 
-    servaddr->sin_addr.s_addr = htonl(INADDR_ANY); 
-    servaddr->sin_port = htons(PORT); 
-  
-    // Binding newly created socket to given IP and verification 
-    if ((bind(*sockfd, (SA*)servaddr, saddr_s)) != 0) { 
-        printf("socket bind failed...\n"); 
-        exit(0); 
-    } 
-    else
-        printf("Socket successfully binded..\n"); 
-  
-    // Now server is ready to listen and verification 
-    if ((listen(*sockfd, 1)) != 0) { 
-        printf("Listen failed...\n"); 
-        exit(0); 
-    } 
-    else
-        printf("Server listening..\n");
+int open_server(void){
+	if(sockfd < 0){
+		sockfd = socket(AF_INET, SOCK_STREAM, 0);
+		if (sockfd == -1) { 
+    	    printf("socket creation failed...\n"); 
+      	  return -1;
+    	} 
+    	else
+      	  printf("Socket successfully created..\n"); 
 
-		int len = caddr_s;
+    	bzero(&seraddr, sizeof(seraddr));
   
-    // Accept the data packet from client and verification 
-    int connfd = accept(*sockfd, (SA*)cli, &len); 
-    if (connfd < 0) { 
-        printf("server acccept failed...\n"); 
-        exit(0); 
-    } 
-    else
-        printf("server acccept the client...\n");
-		
-		return connfd;
+  	  // assign IP, PORT 
+    	seraddr.sin_family = AF_INET; 
+    	seraddr.sin_addr.s_addr = htonl(INADDR_ANY); 
+    	seraddr.sin_port = htons(PORT); 
+  
+    	// Binding newly created socket to given IP and verification 
+    	if ((bind(sockfd, (SA*)&seraddr, sizeof(seraddr))) != 0) { 
+      	  printf("socket bind failed...\n");
+      	  return -1;
+    	} 
+    	else
+        	printf("Socket successfully binded..\n"); 
+  
+    	// Now server is ready to listen and verification 
+    	if ((listen(sockfd, 1)) != 0) { 
+      	  printf("Listen failed...\n"); 
+      	  return -1;
+    	} 
+    	else
+      	  printf("Server listening..\n");
+	}
+
+  // Accept the data packet from client and verification
+  client = accept(sockfd, (SA*)&cli, &cli_len);
+  if (client < 0) {
+    printf("server acccept failed...\n");
+    return -1;
+  } 
+  else
+    printf("server acccept the client...\n");
+
+	return client;
 }
 
