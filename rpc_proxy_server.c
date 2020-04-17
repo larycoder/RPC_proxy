@@ -105,7 +105,7 @@ send_proxy_1_svc(p_message *argp, struct svc_req *rqstp)
 	if(P_DEBUG){
 		printf("send length: %d\n", argp->length);
 	}
-	result = write(argp->fd, argp->ct, argp->length); // write content to socket
+	result = write(argp->fd, argp->ct.content_val, argp->length); // write content to socket
 
 	return &result;
 }
@@ -119,11 +119,14 @@ recv_proxy_1_svc(int *argp, struct svc_req *rqstp)
 	 * insert server code here
 	 */
 	char ct[100];
-	result.ct = ct;
+	content c_ct;
+	c_ct.content_val = ct;
+	c_ct.content_len = 100;
+	result.ct = c_ct;
 	result.fd = *argp;
 
 	// read data from server to client
-	result.length = read(result.fd, result.ct, sizeof(ct)); // read from socket
+	result.length = read(result.fd, result.ct.content_val, sizeof(ct)); // read from socket
 
 	if(P_DEBUG && result.length > 0){
 		printf("recv length: %d\n", result.length);

@@ -101,11 +101,13 @@ void rpc_proxy_program_1(char *host){
 		// send header to proxy
 		p_message head;
 		head.fd = *fd;
-		printf("fd of dest: %d\n", *fd);
 		
 		// cut off head to send
 		for(int i = 0; i < (h_length / 50); i++){
-			head.ct = &line[i * 50];
+			content c_line;
+			c_line.content_val = &line[i * 50];
+			c_line.content_len = 50;
+			head.ct = c_line;
 			head.length = 50;
 			int *result_send = send_proxy_1(&head, clnt);
 			if (result_send == (int *) NULL) {
@@ -122,6 +124,7 @@ void rpc_proxy_program_1(char *host){
 
 		// send remained part of head
 		head.length = h_length % 100;
+		/* NEED FIX */
 		int *result_send = send_proxy_1(&head, clnt);
 		if (result_send == (int *) NULL) {
 			clnt_perror (clnt, "send remain head call failed");
@@ -154,11 +157,14 @@ void rpc_proxy_program_1(char *host){
 
 	// transfer data
 	p_message message;
-	message.ct = data;
+	content c_data;
+	c_data.content_val = data;
+	c_data.content_len = 100;
+	message.ct = c_data;
 	message.fd = *fd;
 	while(fd){
 		// send message from src to dest
-		message.length = read(client, message.ct, sizeof(data));
+		message.length = read(client, message.ct.content_val, sizeof(data));
 		if(message.length > 0){
 			int *result_send = send_proxy_1(&message, clnt);
 			
@@ -182,7 +188,7 @@ void rpc_proxy_program_1(char *host){
 			return;
 		}
 		else if(result_recv->length > 0){
-			int value = write(client, result_recv->ct, result_recv->length);
+			int value = write(client, result_recv->ct.content_val, result_recv->length);
 			if(value == STOP_SIG){
 				close_proxy_1(fd, clnt); // stop connection
 				return;
