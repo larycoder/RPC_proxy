@@ -20,8 +20,13 @@ struct dest_host {
 };
 typedef struct dest_host dest_host;
 
+typedef struct {
+	u_int content_len;
+	char *content_val;
+} content;
+
 struct p_message {
-	char *ct;
+	content ct;
 	int length;
 	int fd;
 };
@@ -65,10 +70,12 @@ extern int rpc_proxy_program_1_freeresult ();
 
 #if defined(__STDC__) || defined(__cplusplus)
 extern  bool_t xdr_dest_host (XDR *, dest_host*);
+extern  bool_t xdr_content (XDR *, content*);
 extern  bool_t xdr_p_message (XDR *, p_message*);
 
 #else /* K&R C */
 extern bool_t xdr_dest_host ();
+extern bool_t xdr_content ();
 extern bool_t xdr_p_message ();
 
 #endif /* K&R C */

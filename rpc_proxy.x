@@ -3,8 +3,10 @@ struct dest_host{
   int port;
 };
 
+typedef char content<100>;
+
 struct p_message{
-  string ct<100>;
+  content ct;
   int length;
   int fd;
 };
