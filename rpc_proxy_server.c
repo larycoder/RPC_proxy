@@ -114,7 +114,7 @@ recv_proxy_1_svc(int *argp, struct svc_req *rqstp)
 	/*
 	 * insert server code here
 	 */
-	char ct[100];
+	static char ct[100];
 	content c_ct;
 	c_ct.content_val = ct;
 	c_ct.content_len = 100;
@@ -131,6 +131,8 @@ recv_proxy_1_svc(int *argp, struct svc_req *rqstp)
 
 	if(P_DEBUG && result.length > 0){
 		printf("recv length: %d\n", result.length);
+		printf("recv value: ");
+		for(int i = 0; i < result.length; i++) printf("%c", result.ct.content_val[i]);
 	}
 
 	return &result;
