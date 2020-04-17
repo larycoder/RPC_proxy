@@ -87,10 +87,6 @@ connect_proxy_1_svc(dest_host *argp, struct svc_req *rqstp)
 
 	printf("Connected to server...\n");
 
-	// setup non-blocking r/w
-	int flags = fcntl(result, F_GETFL, 0);
-	fcntl(result, F_SETFL, flags | O_NONBLOCK);
-
 	return &result;
 }
 
@@ -126,6 +122,11 @@ recv_proxy_1_svc(int *argp, struct svc_req *rqstp)
 	result.fd = *argp;
 
 	// read data from server to client
+	
+	// setup non-blocking r/w
+	int flags = fcntl(*argp, F_GETFL, 0);
+	fcntl(*argp, F_SETFL, flags | O_NONBLOCK);
+
 	result.length = read(result.fd, result.ct.content_val, sizeof(ct)); // read from socket
 
 	if(P_DEBUG && result.length > 0){

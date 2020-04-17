@@ -102,9 +102,9 @@ void rpc_proxy_program_1(char *host){
 		p_message head;
 		head.fd = *fd;
 		
-		// cut off head to send
+		content c_line; // cut off head to send
+
 		for(int i = 0; i < (h_length / 50); i++){
-			content c_line;
 			c_line.content_val = &line[i * 50];
 			c_line.content_len = 50;
 			head.ct = c_line;
@@ -124,6 +124,9 @@ void rpc_proxy_program_1(char *host){
 
 		// send remained part of head
 		head.length = h_length % 100;
+		c_line.content_val = &line[(h_length / 50) * 50];
+		c_line.content_len = head.length;
+		head.ct = c_line;
 		/* NEED FIX */
 		int *result_send = send_proxy_1(&head, clnt);
 		if (result_send == (int *) NULL) {
@@ -166,6 +169,7 @@ void rpc_proxy_program_1(char *host){
 		// send message from src to dest
 		message.length = read(client, message.ct.content_val, sizeof(data));
 		if(message.length > 0){
+			printf("its here\n");
 			int *result_send = send_proxy_1(&message, clnt);
 			
 			if (result_send == (int *) NULL) {
@@ -189,6 +193,7 @@ void rpc_proxy_program_1(char *host){
 		}
 		else if(result_recv->length > 0){
 			int value = write(client, result_recv->ct.content_val, result_recv->length);
+			for(int i = 0; i < result_recv->length; i++) printf("%c", result_recv->ct.content_val[i]);
 			if(value == STOP_SIG){
 				close_proxy_1(fd, clnt); // stop connection
 				return;
