@@ -169,7 +169,6 @@ void rpc_proxy_program_1(char *host){
 		// send message from src to dest
 		message.length = read(client, message.ct.content_val, sizeof(data));
 		if(message.length > 0){
-			printf("its here\n");
 			int *result_send = send_proxy_1(&message, clnt);
 			
 			if (result_send == (int *) NULL) {
