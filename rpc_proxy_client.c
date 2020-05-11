@@ -13,6 +13,7 @@
 #include <signal.h>
 #include <arpa/inet.h>
 #include <errno.h>
+#include <sys/time.h>
 
 // proxy support https only
 #define HTTPS 0
@@ -53,7 +54,10 @@ void close_socket(){
 }
 
 void rpc_proxy_program_1(char *host){
-	clnt = clnt_create (host, rpc_proxy_program, rpc_proxy_ver, "udp");
+	struct timeval timeout;
+	timeout.tv_sec = 30000;
+	timeout.tv_usec = 0;
+	clnt = clnt_create_timed (host, rpc_proxy_program, rpc_proxy_ver, "udp", &timeout);
 	if (clnt == NULL){
 		clnt_pcreateerror (host);
 		return;
@@ -300,7 +304,7 @@ int open_server(void){
         	printf("Socket successfully binded..\n"); 
   
     	// Now server is ready to listen and verification 
-    	if ((listen(sockfd, 1)) != 0) { 
+    	if ((listen(sockfd, 100)) != 0) { 
       	  printf("Listen failed...\n"); 
       	  return -1;
     	} 
